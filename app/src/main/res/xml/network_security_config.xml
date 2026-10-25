@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- İKO veri sağlayıcısı düz HTTP kullandığı için sadece bu adrese izin verilir. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">146.19.208.20</domain>
+    </domain-config>
+</network-security-config>
