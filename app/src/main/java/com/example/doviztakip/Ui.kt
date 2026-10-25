@@ -1,5 +1,8 @@
 package com.example.doviztakip
+import androidx.compose.foundation.ExperimentalFoundationApi
 
+@OptIn(ExperimentalFoundationApi::class)
+// Veya hata veren ilgili diğer Compose deneysel sınıfları (örn: @OptIn(ExperimentalMaterial3Api::class))
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
