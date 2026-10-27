@@ -838,7 +838,7 @@ private fun rememberFlash(value: Double): FlashState {
             up = value > prev.doubleValue
             prev.doubleValue = value
             anim.snapTo(1f)
-            anim.animateTo(0f, tween(1400))
+            anim.animateTo(0f, tween(2500))
         }
     }
     return FlashState(if (up) pal.green else pal.red, anim.value)
