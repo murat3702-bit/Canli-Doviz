@@ -41,9 +41,25 @@ data class Quote(
 data class Holding(val key: String, val amount: Double)
 
 object Repo {
-    private val client = OkHttpClient()
     private const val UA =
-        "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36"
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+
+    // Tüm isteklere tarayıcı benzeri ortak başlıklar eklenir (okhttp/x.x yerine normal ziyaretçi görünümü).
+    private val client = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val orig = chain.request()
+            val b = orig.newBuilder()
+                .header("User-Agent", UA)
+                .header("Accept-Language", "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")
+            if (orig.header("Accept") == null) {
+                b.header("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
+            }
+            if (orig.url.host.endsWith("canlidoviz.com")) {
+                b.header("Referer", "https://canlidoviz.com/")
+            }
+            chain.proceed(b.build())
+        }
+        .build()
 
     // Adresler tek yerde: site yapısı değişirse sadece burayı düzenleyin.
     private fun url(c: Category, m: Market) = "https://canlidoviz.com/${c.slug}/${m.slug}"
