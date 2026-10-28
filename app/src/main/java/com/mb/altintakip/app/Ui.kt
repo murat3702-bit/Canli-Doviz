@@ -11,8 +11,6 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
@@ -41,7 +39,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -56,6 +53,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -365,25 +363,33 @@ fun QuoteRow(
 }
 
 /**
- * Fiyat değişince SADECE yazı rengi yanıp söner: artışta yeşil, düşüşte kırmızı, sonra normale döner.
- * Animasyon değeri yalnızca bu küçük bileşenin içinde okunur; böylece kare başına yalnızca bu rakam
- * yeniden çizilir, satır ve liste yeniden oluşturulmaz.
+ * Fade efekti olmadan; fiyat artınca anında yeşil, azalınca anında kırmızı olur
+ * ve 2 saniye boyunca o renkte kalıp normal rengine döner.
  */
 @Composable
 private fun FlashText(value: Double, text: String, base: Color, fontSize: TextUnit, bold: Boolean) {
     val prev = remember { DoubleArray(1) { value } }
-    val anim = remember { Animatable(0f) }
+    var isColored by remember { mutableStateOf(false) }
     var up by remember { mutableStateOf(true) }
+
     LaunchedEffect(value) {
         if (value != prev[0]) {
             up = value > prev[0]
             prev[0] = value
-            anim.snapTo(1f)
-            anim.animateTo(0f, tween(2000))
+            isColored = true
+            delay(2000) // 2 saniye süreyle renkli kalır
+            isColored = false
         }
     }
+
+    val color = when {
+        !isColored -> base
+        up -> pal.green
+        else -> pal.red
+    }
+
     Text(
-        text, color = lerp(base, if (up) pal.green else pal.red, anim.value), fontSize = fontSize,
+        text, color = color, fontSize = fontSize,
         fontWeight = if (bold) FontWeight.Bold else null, maxLines = 1, softWrap = false
     )
 }
@@ -431,42 +437,27 @@ private fun StatusLine(vm: MainVM, onConverter: () -> Unit) {
     }
 }
 
-oldUi.kt dosyan içinde değiştireceğin satır aralığını doğrudan nokta atışı bulabilmen için, ilgili FlashText fonksiyonunun bulunduğu yer:
- * Eski kodunda: Yaklaşık 434. ile 454. satırlar arasında yer alan private fun FlashText(...) fonksiyonunun tamamını.
-Yeni Kod Bloğu (Bunu yapıştıracaksın):
-Mevcut FlashText fonksiyonunu tamamen silip yerine aşağıdaki net renk değişimli (fade efektiz, 2 saniye süreli) sürümü koyabilirsin:
-/**
- * Yumuşak fade (geçiş) efekti olmadan; fiyat artınca anında yeşil, 
- * azalınca anında kırmızı olur ve 2 saniye sonra normal rengine döner.
- */
 @Composable
-private fun FlashText(value: Double, text: String, base: Color, fontSize: TextUnit, bold: Boolean) {
-    val prev = remember { DoubleArray(1) { value } }
-    var isColored by remember { mutableStateOf(false) }
-    var up by remember { mutableStateOf(true) }
-
-    LaunchedEffect(value) {
-        if (value != prev[0]) {
-            up = value > prev[0]
-            prev[0] = value
-            isColored = true
-            kotlinx.coroutines.delay(2000) // 2 saniye süreyle renkli kalır
-            isColored = false
-        }
-    }
-
-    val color = when {
-        !isColored -> base
-        up -> pal.green
-        else -> pal.red
-    }
-
-    Text(
-        text, color = color, fontSize = fontSize,
-        fontWeight = if (bold) FontWeight.Bold else null, maxLines = 1, softWrap = false
+fun Portfoy(
+    quotes: List<Quote>, holdings: List<Holding>, edit: Boolean,
+    onRemove: (String) -> Unit, onMove: (String, Int) -> Unit, onEdit: (Holding) -> Unit, onAdd: () -> Unit
+) {
+    val byKey = quotes.associateBy { it.key }
+    fun value(h: Holding) = byKey[h.key]?.let { it.buy * h.amount } ?: 0.0
+    val titles = mapOf(
+        Market.IKO to "İKO Varlıkları",
+        Market.KAPALI to "Kapalı Çarşı Varlıkları",
+        Market.SERBEST to "Serbest Piyasa Varlıkları"
     )
-}
-
+    val shortTitles = mapOf(Market.IKO to "İKO", Market.KAPALI to "Kapalı Çarşı", Market.SERBEST to "Serbest Piyasa")
+    val groups = listOf(Market.IKO, Market.KAPALI, Market.SERBEST).mapNotNull { m ->
+        val l = holdings.filter { it.key.substringBefore("|") == m.name }
+        if (l.isEmpty()) null else m to l
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text("TOPLAM DEĞER (ALIŞ FİYATIYLA)", color = pal.muted, fontSize = 12.sp)
+            Spacer(Modifier.height(6.dp))
             groups.forEach { (m, list) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(shortTitles[m] ?: m.label, color = pal.muted, fontSize = 17.sp, modifier = Modifier.weight(1f))
@@ -559,7 +550,6 @@ fun AddDialog(quotes: List<Quote>, onDismiss: () -> Unit, onAdd: (String, Double
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } }
     )
 }
-
 
 @Composable
 fun SoundRow(sound: String, emptyLabel: String, onChange: (String) -> Unit) {
@@ -684,7 +674,6 @@ fun RawDialog(onDismiss: () -> Unit) {
     )
 }
 
-
 @Composable
 fun AlarmGroupCard(key: String, list: List<Alarm>, vm: MainVM) {
     val ctx = LocalContext.current
@@ -729,7 +718,6 @@ fun AlarmGroupCard(key: String, list: List<Alarm>, vm: MainVM) {
     }
 }
 
-
 @Composable
 fun EditHoldingDialog(h: Holding, onDismiss: () -> Unit, onSave: (Double) -> Unit, onDelete: () -> Unit) {
     var amt by remember { mutableStateOf(if (h.amount % 1.0 == 0.0) h.amount.toLong().toString() else h.amount.toString()) }
@@ -763,7 +751,6 @@ fun EditHoldingDialog(h: Holding, onDismiss: () -> Unit, onSave: (Double) -> Uni
     )
 }
 
-
 private fun fmtN(v: Double, d: Int): String {
     var t = String.format(Locale.US, "%.${d}f", v)
     if (d > 2 && t.contains('.')) t = t.trimEnd('0').trimEnd('.')
@@ -785,169 +772,4 @@ private fun NumField(value: String, onChange: (String) -> Unit) {
         cursorBrush = SolidColor(pal.teal),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.width(112.dp)
-            .border(1.dp, pal.line, RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp)
-    )
-}
-
-@Composable
-private fun ConvRow(q: Quote?, options: List<Quote>, value: String, onPick: (String) -> Unit, onValue: (String) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.weight(1f)) {
-            Column(Modifier.clickable { open = true }.padding(vertical = 4.dp)) {
-                Text((q?.name ?: "Seç").uppercase(TR) + "  ▾", color = pal.text, fontSize = 15.sp, maxLines = 1)
-                Text(q?.market?.label ?: "", color = pal.muted, fontSize = 10.sp, maxLines = 1)
-            }
-            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                options.forEach { o ->
-                    DropdownMenuItem(
-                        text = { Text("${o.name} · ${o.market.label}", fontSize = 14.sp) },
-                        onClick = { onPick(o.key); open = false }
-                    )
-                }
-            }
-        }
-        NumField(value, onValue)
-        Text(unitOf(q), color = pal.muted, fontSize = 12.sp, maxLines = 1, softWrap = false, modifier = Modifier.width(38.dp).padding(start = 8.dp))
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ConverterSheet(quotes: List<Quote>, onDismiss: () -> Unit) {
-    fun firstKey(cat: Category, name: String): String? =
-        (quotes.firstOrNull { it.category == cat && it.market == Market.KAPALI && it.name.contains(name, true) }
-            ?: quotes.firstOrNull { it.category == cat && it.name.contains(name, true) })?.key
-    val defaults = listOfNotNull(firstKey(Category.DOVIZ, "USD"), firstKey(Category.DOVIZ, "EUR"), firstKey(Category.ALTIN, "Gram"))
-    var keys by remember { mutableStateOf(List(3) { i -> defaults.getOrNull(i) ?: quotes.firstOrNull()?.key ?: "" }) }
-    val texts = remember { mutableStateListOf("1", "", "", "") }
-    var useSell by remember { mutableStateOf(true) }
-    var active by remember { mutableIntStateOf(0) }
-
-    fun price(i: Int): Double {
-        val q = quotes.find { it.key == keys[i] } ?: return 0.0
-        val p = if (useSell) q.sell else q.buy
-        return if (p > 0.0) p else maxOf(q.buy, q.sell)
-    }
-
-    // [from] satırındaki miktardan TL değerini bulur, diğer satırları ona göre doldurur.
-    fun recompute(from: Int) {
-        val n = texts[from].replace(',', '.').toDoubleOrNull()
-        if (n == null) {
-            for (j in 0..3) if (j != from) texts[j] = ""
-            return
-        }
-        val tl = if (from == 3) n else n * price(from)
-        for (j in 0..3) {
-            if (j == from) continue
-            texts[j] = if (j == 3) fmtN(tl, 2) else fmtN(if (price(j) > 0.0) tl / price(j) else 0.0, 4)
-        }
-    }
-
-    LaunchedEffect(quotes.isEmpty()) { if (quotes.isNotEmpty()) recompute(0) }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = pal.surface
-    ) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .imePadding().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)
-        ) {
-            Text("DÖVİZ ÇEVİRİCİ", color = pal.teal, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            if (quotes.isEmpty()) {
-                Text("Fiyat verisi bekleniyor…", color = pal.muted, modifier = Modifier.padding(vertical = 24.dp))
-            } else {
-                for (i in 0..2) {
-                    ConvRow(
-                        quotes.find { it.key == keys[i] }, quotes, texts[i],
-                        { k -> keys = keys.toMutableList().also { it[i] = k }; recompute(active) },
-                        { v -> texts[i] = v; active = i; recompute(i) }
-                    )
-                }
-                HorizontalDivider(color = pal.div, modifier = Modifier.padding(vertical = 4.dp))
-                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf(false to "ALIŞ", true to "SATIŞ").forEach { (sell, label) ->
-                            Text(
-                                label, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                                color = if (useSell == sell) pal.teal else pal.muted,
-                                modifier = Modifier.clip(RoundedCornerShape(10.dp))
-                                    .background(if (useSell == sell) pal.selBg else Color.Transparent)
-                                    .clickable { useSell = sell; recompute(active) }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            )
-                        }
-                    }
-                    NumField(texts[3]) { v -> texts[3] = v; active = 3; recompute(3) }
-                    Text("TL", color = pal.muted, fontSize = 12.sp, modifier = Modifier.width(38.dp).padding(start = 8.dp))
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
-
-
-/**
- * Tutarları sütun gibi hizalar (tabular-nums mantığı): her rakam aynı genişlikte bir hücreye,
- * nokta/virgül dar sabit hücreye yazılır. Yazı tipi "tnum" özelliğini desteklemese bile
- * rakamlar ve virgüller alt alta kusursuz durur. Tutarlar sağa yaslıdır.
- */
-@Composable
-private fun AmountText(text: String, color: Color, fontSize: TextUnit, weight: FontWeight? = null) {
-    val density = LocalDensity.current
-    val digitW = with(density) { fontSize.toDp() * (if (weight == FontWeight.Bold) 0.64f else 0.60f) }
-    val sepW = with(density) { fontSize.toDp() * 0.28f }
-    val spaceW = with(density) { fontSize.toDp() * 0.30f }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        text.forEach { ch ->
-            val w = when {
-                ch.isDigit() -> digitW
-                ch == '.' || ch == ',' -> sepW
-                ch == ' ' -> spaceW
-                else -> null
-            }
-            Text(
-                ch.toString(), color = color, fontSize = fontSize, fontWeight = weight,
-                maxLines = 1, softWrap = false, textAlign = TextAlign.Center,
-                modifier = if (w != null) Modifier.width(w) else Modifier
-            )
-        }
-    }
-}
-/**
- * Yumuşak fade (geçiş) efekti olmadan; fiyat artınca anında yeşil, 
- * azalınca anında kırmızı olur ve 2 saniye sonra normal rengine döner.
- */
-@Composable
-private fun FlashText(value: Double, text: String, base: Color, fontSize: TextUnit, bold: Boolean) {
-    val prev = remember { DoubleArray(1) { value } }
-    var isColored by remember { mutableStateOf(false) }
-    var up by remember { mutableStateOf(true) }
-
-    LaunchedEffect(value) {
-        if (value != prev[0]) {
-            up = value > prev[0]
-            prev[0] = value
-            isColored = true
-            delay(2000) // 2 saniye süreyle renkli kalır
-            isColored = false
-        }
-    }
-
-    val color = when {
-        !isColored -> base
-        up -> pal.green
-        else -> pal.red
-    }
-
-    Text(
-        text, color = color, fontSize = fontSize,
-        fontWeight = if (bold) FontWeight.Bold else null, maxLines = 1, softWrap = false
-    )
-}
+            .border(1.dp, pal.line, Rounded
